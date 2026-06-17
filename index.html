@@ -1,0 +1,55 @@
+import { useEffect, useState } from 'react';
+import api from '../api/axios';
+import StatusBadge from '../components/StatusBadge';
+
+export default function Dashboard() {
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api
+      .get('/attendance/history')
+      .then(({ data }) => setRecords(data))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="container" style={{ marginTop: 40 }}>
+      <p className="eyebrow">Your record</p>
+      <h2 style={{ fontFamily: 'var(--font-display)', marginTop: 4, marginBottom: 24 }}>
+        Attendance history
+      </h2>
+
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {loading ? (
+          <p style={{ padding: 24, color: 'var(--text-muted)' }}>Loading…</p>
+        ) : records.length === 0 ? (
+          <p style={{ padding: 24, color: 'var(--text-muted)' }}>No attendance marked yet.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Status</th>
+                <th>Face distance</th>
+                <th>Distance from campus</th>
+                <th>Flag reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map((r) => (
+                <tr key={r._id}>
+                  <td>{r.date}</td>
+                  <td><StatusBadge status={r.status} /></td>
+                  <td>{r.faceMatchDistance}</td>
+                  <td>{r.distanceFromCampusMeters} m</td>
+                  <td>{r.flagReason || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}

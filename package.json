@@ -1,0 +1,189 @@
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import api from '../api/axios';
+import { useAuth } from '../context/AuthContext';
+import { loadFaceModels, getFaceDescriptor } from '../utils/faceapi';
+
+export default function Register() {
+  const videoRef = useRef(null);
+  const [form, setForm] = useState({ name: '', email: '', password: '', rollNumber: '' });
+  const [descriptor, setDescriptor] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [modelsReady, setModelsReady] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let stream;
+
+    (async () => {
+      await loadFaceModels();
+      setModelsReady(true);
+
+      stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    })().catch(() => setError('Camera access is required for face enrollment'));
+
+    return () => {
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const captureFace = async () => {
+    if (!modelsReady) return;
+    setScanning(true);
+    setError('');
+
+    const result = await getFaceDescriptor(videoRef.current);
+    setScanning(false);
+
+    if (!result) {
+      setError('No face detected — center your face in the frame and try again');
+      return;
+    }
+    setDescriptor(result);
+  };
+
+  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!descriptor) {
+      setError('Capture your face before submitting');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.post('/auth/register', { ...form, faceDescriptor: descriptor });
+      login(data);
+      navigate('/mark');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="container" style={{ display: 'flex', justifyContent: 'center', marginTop: 56, marginBottom: 56 }}>
+      <div className="card" style={{ width: 420 }}>
+        <p className="eyebrow">One-time enrollment</p>
+        <h2 style={{ fontFamily: 'var(--font-display)', marginTop: 4, marginBottom: 20 }}>
+          Create your account
+        </h2>
+
+        {/* Scanner viewport — the signature visual element of the project */}
+        <div
+          style={{
+            position: 'relative',
+            width: '100%',
+            aspectRatio: '4/3',
+            background: '#000',
+            borderRadius: 8,
+            overflow: 'hidden',
+            marginBottom: 16,
+          }}
+        >
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
+          />
+
+          {/* corner brackets */}
+          {['top:10px;left:10px;border-right:none;border-bottom:none',
+            'top:10px;right:10px;border-left:none;border-bottom:none',
+            'bottom:10px;left:10px;border-right:none;border-top:none',
+            'bottom:10px;right:10px;border-left:none;border-top:none']
+            .map((pos, i) => (
+              <span
+                key={i}
+                style={{
+                  position: 'absolute',
+                  width: 22,
+                  height: 22,
+                  border: `2px solid ${descriptor ? 'var(--accent-verified)' : 'var(--accent-pending)'}`,
+                  ...Object.fromEntries(pos.split(';').map((p) => p.split(':'))),
+                }}
+              />
+          ))}
+
+          {scanning && (
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                height: 2,
+                background: 'var(--accent-pending)',
+                animation: 'scanline 1.2s linear infinite',
+                boxShadow: '0 0 12px var(--accent-pending)',
+              }}
+            />
+          )}
+
+          <style>{`
+            @keyframes scanline {
+              0% { top: 0%; }
+              100% { top: 100%; }
+            }
+          `}</style>
+        </div>
+
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={captureFace}
+          disabled={!modelsReady || scanning}
+          style={{ width: '100%', marginBottom: 20 }}
+        >
+          {descriptor ? 'Re-capture face' : scanning ? 'Scanning…' : 'Capture face'}
+        </button>
+
+        <form onSubmit={handleSubmit}>
+          <div className="input-group">
+            <label>Full name</label>
+            <input name="name" value={form.name} onChange={handleChange} required />
+          </div>
+          <div className="input-group">
+            <label>Email</label>
+            <input name="email" type="email" value={form.email} onChange={handleChange} required />
+          </div>
+          <div className="input-group">
+            <label>Roll number</label>
+            <input name="rollNumber" value={form.rollNumber} onChange={handleChange} />
+          </div>
+          <div className="input-group">
+            <label>Password</label>
+            <input
+              name="password"
+              type="password"
+              value={form.password}
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          {error && <p style={{ color: 'var(--accent-flagged)', fontSize: 13 }}>{error}</p>}
+
+          <button className="btn btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
+            {loading ? 'Creating account…' : 'Register'}
+          </button>
+        </form>
+
+        <p style={{ marginTop: 20, fontSize: 13, color: 'var(--text-muted)' }}>
+          Already have an account? <Link to="/login" style={{ color: 'var(--accent-verified)' }}>Log in</Link>
+        </p>
+      </div>
+    </div>
+  );
+}
